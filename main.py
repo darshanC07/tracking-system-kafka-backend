@@ -93,7 +93,7 @@ def handle_connect(auth):
 
     if client_type == "producer":
         
-        topics = adminClient.list_topics(timeout=10).topics
+        topics = adminClient.list_topics(timeout=100).topics
         if topic not in topics:
             print(f"Topic {topic} does not exist, creating it.")
             fs = adminClient.create_topics([
