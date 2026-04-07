@@ -1,0 +1,56 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Route Map</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+
+    <style>
+      #map {
+        height: 100vh;
+        width: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+    <script>
+      const map = L.map("map").setView([18.5204, 73.8567], 15);
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "&copy; OpenStreetMap contributors",
+      }).addTo(map);
+
+      // Initialize empty route
+      const polyline = L.polyline([], {
+        color: "blue",
+        weight: 5,
+      }).addTo(map);
+
+      // Track bounds dynamically
+      const bounds = L.latLngBounds();
+      const socket = io("https://30vkdstn-5000.inc1.devtunnels.ms/", {
+        auth: {
+          topic: "s1-r1-pick",
+          groupId: "admin",
+          type: "consumer",
+        },
+      });
+
+      socket.on("location_update", (data) => {
+        const { lat, long } = data;
+        const point = [lat, long];
+        console.log("Received location:", point);
+        polyline.addLatLng(point);
+        bounds.extend(point);
+
+        map.panTo(point); // smoother than fitBounds
+      });
+    </script>
+  </body>
+</html>
