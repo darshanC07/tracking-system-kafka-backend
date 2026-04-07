@@ -34,10 +34,15 @@
 
       // Track bounds dynamically
       const bounds = L.latLngBounds();
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const groupId = urlParams.get("group_id");
+      const topic = urlParams.get("topic");
+
       const socket = io("https://30vkdstn-5000.inc1.devtunnels.ms/", {
         auth: {
-          topic: "s1-r1-pick",
-          groupId: "admin",
+          topic: topic,
+          groupId: groupId,
           type: "consumer",
         },
       });
