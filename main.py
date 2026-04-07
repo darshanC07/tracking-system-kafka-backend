@@ -23,12 +23,12 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 connectedUsers = {}
 
 config = {
-    'bootstrap.servers': getenv('bootstrap.servers'),
-    'security.protocol': getenv('security.protocol'),
-    'sasl.mechanisms': getenv('sasl.mechanisms'),
-    'sasl.username': getenv('sasl.username'),
-    'sasl.password': getenv('sasl.password'),
-    'client.id': getenv('client.id'),
+    'bootstrap.servers': getenv('BOOTSTRAP_SERVER'),
+    'security.protocol': getenv('SECURITY_PROTOCOL'),
+    'sasl.mechanisms': getenv('SASL_MECHANISMS'),
+    'sasl.username': getenv('SASL_USERNAME'),
+    'sasl.password': getenv('SASL_PASSWORD'),
+    'client.id': getenv('CLIENT_ID'),
 }
 
 producer = Producer(config)
@@ -39,11 +39,11 @@ active_topics = set()
 
 async def kafka_listener(topic, offset="latest",group_id="admin-4"):
     consumer = Consumer({
-        'bootstrap.servers': getenv('bootstrap.servers'),
-        'security.protocol': getenv('security.protocol'),
-        'sasl.mechanisms': getenv('sasl.mechanisms'),
-        'sasl.username': getenv('sasl.username'),
-        'sasl.password': getenv('sasl.password'),
+        'bootstrap.servers': getenv('BOOTSTRAP_SERVER'),
+        'security.protocol': getenv('SECURITY_PROTOCOL'),
+        'sasl.mechanisms': getenv('SASL_MECHANISMS'),
+        'sasl.username': getenv('SASL_USERNAME'),
+        'sasl.password': getenv('SASL_PASSWORD'),
         'group.id': group_id,
         'auto.offset.reset': offset
     })
@@ -138,8 +138,16 @@ def handle_loc_update(data):
         topics = adminClient.list_topics(timeout=10).topics
         if topic not in topics:
             print(f"Topic {topic} does not exist, creating it.")
-            adminClient.create_topics([topic], timeout=10)
-            print(f"Topic {topic} created successfully.")
+            fs = adminClient.create_topics([
+                    NewTopic(topic, num_partitions=1, replication_factor=3)
+                ])
+
+            for t, f in fs.items():
+                try:
+                    f.result()   
+                    print(f"Created topic {t}")
+                except Exception as e:
+                    print(f"Create failed: {e}")
             
         producer.produce(
             topic,
