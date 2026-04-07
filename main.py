@@ -6,7 +6,7 @@ from flask_cors import CORS
 from flask_socketio import SocketIO, join_room
 from dotenv import load_dotenv
 from confluent_kafka import Producer, Consumer
-from confluent_kafka.admin import AdminClient
+from confluent_kafka.admin import AdminClient,NewTopic
 
 from os import getenv
 import json
@@ -83,7 +83,7 @@ def handle_connect(auth):
         topic = auth.get('topic')
         driver_id = auth.get('driver_id')
         client_type = auth.get('type', 'producer')
-
+        print(f"Auth received: topic={topic}, driver_id={driver_id}, type={client_type}")
     if not topic:
         topic = request.args.get('topic')
         driver_id = request.args.get('driver_id')
@@ -92,7 +92,23 @@ def handle_connect(auth):
         return False
 
     if client_type == "producer":
-        if topic not in connectedUsers:
+        
+        topics = adminClient.list_topics(timeout=10).topics
+        if topic not in topics:
+            print(f"Topic {topic} does not exist, creating it.")
+            fs = adminClient.create_topics([
+                    NewTopic(topic, num_partitions=1, replication_factor=3)
+                ])
+
+            for t, f in fs.items():
+                try:
+                    f.result()   
+                    print(f"Created topic {t}")
+                except Exception as e:
+                    print(f"Create failed: {e}")
+        
+            topics = adminClient.list_topics(timeout=10).topics
+            print(f"Current topics: {topics.keys()}")
             connectedUsers[topic] = set()
 
         connectedUsers[topic].add(driver_id)
@@ -112,14 +128,22 @@ def handle_connect(auth):
 def handle_loc_update(data):
     topic = data.get('topic')
     loc = data.get('loc')
-
+    driver = data.get('driver_id')
+    school = data.get('school')
+    
     if not topic or not loc:
         return
 
     try:
+        topics = adminClient.list_topics(timeout=10).topics
+        if topic not in topics:
+            print(f"Topic {topic} does not exist, creating it.")
+            adminClient.create_topics([topic], timeout=10)
+            print(f"Topic {topic} created successfully.")
+            
         producer.produce(
             topic,
-            key=b"key",
+            key=bytes(f"{school}-{driver}", 'utf-8'),
             value=json.dumps(loc).encode()
         )
 
