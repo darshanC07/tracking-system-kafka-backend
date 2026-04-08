@@ -1,24 +1,24 @@
-# import eventlet
-# eventlet.monkey_patch()
+import eventlet
+eventlet.monkey_patch()
 
 from flask import Flask, render_template, request
 from flask_cors import CORS
 from flask_socketio import SocketIO, join_room
 from dotenv import load_dotenv
 from confluent_kafka import Producer, Consumer
-from confluent_kafka.admin import AdminClient,NewTopic
+from confluent_kafka.admin import AdminClient, NewTopic
 
 from os import getenv
 import json
-import asyncio
 import threading
+
 
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
 
 config = {
@@ -31,12 +31,18 @@ config = {
 }
 
 producer = Producer(config)
-
 adminClient = AdminClient(config)
 
-active_topics = set()
 
-async def kafka_listener(topic, offset="latest",group_id="admin-4"):
+active_topics = set()
+running_consumers = set()
+cached_topics = set()
+lock = threading.Lock()
+
+
+def kafka_listener(topic, group_id="admin-4", offset="latest"):
+    print(f"[KAFKA] Starting listener for {topic}")
+
     consumer = Consumer({
         'bootstrap.servers': getenv('BOOTSTRAP_SERVER'),
         'security.protocol': getenv('SECURITY_PROTOCOL'),
@@ -46,17 +52,17 @@ async def kafka_listener(topic, offset="latest",group_id="admin-4"):
         'group.id': group_id,
         'auto.offset.reset': offset
     })
-    
-    while True:
-        consumer.subscribe([topic])
-        msg = consumer.poll(1.0)
 
-        if msg is None:
+    consumer.subscribe([topic])  
+
+    while True:
+        msg = consumer.poll(0.2)
+
+        if msg is None or msg.error():
             continue
 
         try:
             data = json.loads(msg.value().decode())
-            topic = msg.topic()
 
             print(f"[KAFKA] {topic} -> {data}")
 
@@ -82,7 +88,7 @@ def handle_connect(auth):
         topic = auth.get('topic')
         driver_id = auth.get('driver_id')
         client_type = auth.get('type', 'producer')
-        print(f"Auth received: topic={topic}, driver_id={driver_id}, type={client_type}")
+
     if not topic:
         topic = request.args.get('topic')
         driver_id = request.args.get('driver_id')
@@ -91,32 +97,42 @@ def handle_connect(auth):
         return False
 
     if client_type == "producer":
-        
-        topics = adminClient.list_topics(timeout=100).topics
-        if topic not in topics:
-            print(f"Topic {topic} does not exist, creating it.")
-            fs = adminClient.create_topics([
-                    NewTopic(topic, num_partitions=1, replication_factor=3)
-                ])
 
-            for t, f in fs.items():
+        with lock:
+            if topic not in cached_topics:
                 try:
-                    f.result()   
-                    print(f"Created topic {t}")
+                    fs = adminClient.create_topics([
+                        NewTopic(topic, num_partitions=1, replication_factor=1)
+                    ])
+                    for t, f in fs.items():
+                        try:
+                            f.result()
+                            print(f"[KAFKA] Created topic {t}")
+                        except Exception as e:
+                            print(f"[KAFKA] Create failed: {e}")
                 except Exception as e:
-                    print(f"Create failed: {e}")
-        
-            topics = adminClient.list_topics(timeout=10).topics
-            print(f"Current topics: {topics.keys()}")
+                    print("Topic creation error:", e)
+
+                cached_topics.add(topic)
 
         join_room(topic)
-        
         active_topics.add(topic)
 
         print(f"[PRODUCER] joined {topic}")
 
     else:
         join_room(f"{topic}-consumer")
+
+        with lock:
+            if topic not in running_consumers:
+                threading.Thread(
+                    target=kafka_listener,
+                    args=(topic,),
+                    daemon=True
+                ).start()
+
+                running_consumers.add(topic)
+
         print(f"[CONSUMER] joined {topic}-consumer")
 
 
@@ -126,32 +142,18 @@ def handle_loc_update(data):
     loc = data.get('loc')
     driver = data.get('driver_id')
     school = data.get('school')
-    
+
     if not topic or not loc:
         return
 
     try:
-        topics = adminClient.list_topics(timeout=10).topics
-        if topic not in topics:
-            print(f"Topic {topic} does not exist, creating it.")
-            fs = adminClient.create_topics([
-                    NewTopic(topic, num_partitions=1, replication_factor=3)
-                ])
-
-            for t, f in fs.items():
-                try:
-                    f.result()   
-                    print(f"Created topic {t}")
-                except Exception as e:
-                    print(f"Create failed: {e}")
-            
         producer.produce(
             topic,
             key=bytes(f"{school}-{driver}", 'utf-8'),
             value=json.dumps(loc).encode()
         )
 
-        producer.poll(0)
+        producer.flush(0.01)
 
         print(f"[PRODUCED] {topic} -> {loc}")
 
@@ -159,25 +161,14 @@ def handle_loc_update(data):
         print("Producer error:", e)
 
 
+@app.route('/')
+def home():
+    return "Server running"
+
 @app.route('/admin')
 def admin():
-    topic = request.args.get('topic')
-    group_id = request.args.get('group_id', 'admin-4')
-    offset = request.args.get('offset', 'latest')
-    
-    if topic is None and group_id == 'admin-4' and offset == 'latest':
-        print("No parameters provided, rendering index.html")
-        metadata = adminClient.list_topics(timeout=10)
-        
-        return render_template('index.html', topics=metadata.topics.keys())
-    
-    if topic is None:
-        return "Topic is required", 400
-    
-    threading.Thread(target=lambda: asyncio.run(kafka_listener(topic=topic,group_id=group_id,offset=offset)), daemon=True).start()
-    print(f"Started Kafka listener for topic: {topic} with group_id: {group_id} and offset: {offset}")
-    return render_template('ride.html')
-
+    metadata = adminClient.list_topics(timeout=5)
+    return render_template('index.html', topics=metadata.topics.keys())
 
 
 if __name__ == '__main__':
