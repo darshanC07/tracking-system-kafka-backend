@@ -167,8 +167,27 @@ def home():
 
 @app.route('/admin')
 def admin():
-    metadata = adminClient.list_topics(timeout=5)
-    return render_template('index.html', topics=metadata.topics.keys())
+    topic = request.args.get('topic')
+    group_id = request.args.get('group_id', 'admin-4')
+    offset = request.args.get('offset', 'latest')
+
+    if not topic:
+        metadata = adminClient.list_topics(timeout=5)
+        return render_template('index.html', topics=metadata.topics.keys())
+
+    with lock:
+        if topic not in running_consumers:
+            threading.Thread(
+                target=kafka_listener,
+                args=(topic, group_id, offset),
+                daemon=True
+            ).start()
+
+            running_consumers.add(topic)
+
+    print(f"[ADMIN] Started consuming {topic}")
+
+    return render_template('ride.html')
 
 
 if __name__ == '__main__':
