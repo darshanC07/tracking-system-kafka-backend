@@ -42,7 +42,6 @@ lock = threading.Lock()
 
 def create_consumer(topic,group_id):
     consumer = Consumer({
-       consumer = Consumer({
         'bootstrap.servers': getenv('BOOTSTRAP_SERVER'),
         'security.protocol': getenv('SECURITY_PROTOCOL'),
         'sasl.mechanisms': getenv('SASL_MECHANISMS'),
