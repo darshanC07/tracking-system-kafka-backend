@@ -20,6 +20,7 @@ CORS(app)
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
+active_clients = {}
 
 config = {
     'bootstrap.servers': getenv('BOOTSTRAP_SERVER'),
@@ -85,22 +86,29 @@ def create_consumer(topic):
 
 def kafka_listener(topic, sid):
     consumer = create_consumer(topic)
-    while True:
+
+    while sid in active_clients:
         msg = consumer.poll(0.2)
+
         if msg is None or msg.error():
             continue
+
         data = json.loads(msg.value().decode())
-        socketio.emit("location_update", data, to=sid)
+
+        try:
+            socketio.emit("location_update", data, to=sid)
+        except Exception:
+            break
+
+    consumer.close()
 
 @socketio.on("connect")
 def handle_connect(auth):
     topic = auth.get("topic")
-    driver = auth.get("driver_id")
     role = auth.get("type")
 
-    if role == "producer":
-        emit("connected", {"status": "ok"})
-    else:
+    if role != "producer":
+        active_clients[request.sid] = True
         socketio.start_background_task(kafka_listener, topic, request.sid)
 
 @socketio.on("send_location")
@@ -112,8 +120,8 @@ def handle_location(data):
 
 @socketio.on("disconnect")
 def handle_disconnect():
+    active_clients.pop(request.sid, None)
     print("disconnecting")
-    pass
 
 @app.route('/')
 def home():
