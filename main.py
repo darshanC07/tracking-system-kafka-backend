@@ -83,7 +83,7 @@ def handle_connect(auth):
     topic = None
     driver_id = None
     client_type = "producer"
-
+    print(f"auth : {auth}")
     if auth:
         topic = auth.get('topic')
         driver_id = auth.get('driver_id')
@@ -94,6 +94,7 @@ def handle_connect(auth):
         driver_id = request.args.get('driver_id')
 
     if not topic:
+        print("returning back while connecting")
         return False
 
     if client_type == "producer":
