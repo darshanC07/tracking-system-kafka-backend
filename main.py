@@ -20,7 +20,6 @@ CORS(app)
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-connectedUsers = {}
 
 config = {
     'bootstrap.servers': getenv('BOOTSTRAP_SERVER'),
@@ -109,9 +108,6 @@ def handle_connect(auth):
         
             topics = adminClient.list_topics(timeout=10).topics
             print(f"Current topics: {topics.keys()}")
-            connectedUsers[topic] = set()
-
-        connectedUsers[topic].add(driver_id)
 
         join_room(topic)
         
