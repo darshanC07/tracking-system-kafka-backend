@@ -39,7 +39,7 @@
       const groupId = urlParams.get("group_id");
       const topic = urlParams.get("topic");
 
-      const socket = io("https://30vkdstn-5000.inc1.devtunnels.ms/", {
+      const socket = io("https://tracking-system-kafka-backend-production.up.railway.app/", {
         auth: {
           topic: topic,
           groupId: groupId,
