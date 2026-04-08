@@ -40,11 +40,16 @@ running_consumers = set()
 cached_topics = set()
 lock = threading.Lock()
 
-def create_consumer(topic):
+def create_consumer(topic,group_id):
     consumer = Consumer({
-        "bootstrap.servers": getenv('BOOTSTRAP_SERVER'),
-        "group.id": topic,
-        "auto.offset.reset": "latest"
+       consumer = Consumer({
+        'bootstrap.servers': getenv('BOOTSTRAP_SERVER'),
+        'security.protocol': getenv('SECURITY_PROTOCOL'),
+        'sasl.mechanisms': getenv('SASL_MECHANISMS'),
+        'sasl.username': getenv('SASL_USERNAME'),
+        'sasl.password': getenv('SASL_PASSWORD'),
+        'group.id': group_id,
+        'auto.offset.reset': "latest"
     })
     consumer.subscribe([topic])
     return consumer
@@ -84,8 +89,8 @@ def create_consumer(topic):
 #         except Exception as e:
 #             print("Parse error:", e)
 
-def kafka_listener(topic, sid):
-    consumer = create_consumer(topic)
+def kafka_listener(topic, group_id, sid):
+    consumer = create_consumer(topic,group_id)
 
     while sid in active_clients:
         msg = consumer.poll(0.2)
@@ -109,7 +114,8 @@ def handle_connect(auth):
 
     if role != "producer":
         active_clients[request.sid] = True
-        socketio.start_background_task(kafka_listener, topic, request.sid)
+        group_id = auth.get("groupId")
+        socketio.start_background_task(kafka_listener, topic, group_id, request.sid)
 
 @socketio.on("send_location")
 def handle_location(data):
