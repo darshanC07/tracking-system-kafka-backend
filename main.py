@@ -39,128 +39,81 @@ running_consumers = set()
 cached_topics = set()
 lock = threading.Lock()
 
-
-def kafka_listener(topic, group_id="admin-4", offset="latest"):
-    print(f"[KAFKA] Starting listener for {topic}")
-
+def create_consumer(topic):
     consumer = Consumer({
-        'bootstrap.servers': getenv('BOOTSTRAP_SERVER'),
-        'security.protocol': getenv('SECURITY_PROTOCOL'),
-        'sasl.mechanisms': getenv('SASL_MECHANISMS'),
-        'sasl.username': getenv('SASL_USERNAME'),
-        'sasl.password': getenv('SASL_PASSWORD'),
-        'group.id': group_id,
-        'auto.offset.reset': offset
+        "bootstrap.servers": getenv('BOOTSTRAP_SERVER'),
+        "group.id": topic,
+        "auto.offset.reset": "latest"
     })
+    consumer.subscribe([topic])
+    return consumer
 
-    consumer.subscribe([topic])  
+# def kafka_listener(topic, group_id="admin-4", offset="latest"):
+#     print(f"[KAFKA] Starting listener for {topic}")
 
+#     consumer = Consumer({
+#         'bootstrap.servers': getenv('BOOTSTRAP_SERVER'),
+#         'security.protocol': getenv('SECURITY_PROTOCOL'),
+#         'sasl.mechanisms': getenv('SASL_MECHANISMS'),
+#         'sasl.username': getenv('SASL_USERNAME'),
+#         'sasl.password': getenv('SASL_PASSWORD'),
+#         'group.id': group_id,
+#         'auto.offset.reset': offset
+#     })
+
+#     consumer.subscribe([topic])  
+
+#     while True:
+#         msg = consumer.poll(0.2)
+
+#         if msg is None or msg.error():
+#             continue
+
+#         try:
+#             data = json.loads(msg.value().decode())
+
+#             print(f"[KAFKA] {topic} -> {data}")
+
+#             socketio.emit(
+#                 "location_update",
+#                 data,
+#                 room=f"{topic}-consumer"
+#             )
+
+#         except Exception as e:
+#             print("Parse error:", e)
+
+def kafka_listener(topic, sid):
+    consumer = create_consumer(topic)
     while True:
         msg = consumer.poll(0.2)
-
         if msg is None or msg.error():
             continue
+        data = json.loads(msg.value().decode())
+        socketio.emit("location_update", data, to=sid)
 
-        try:
-            data = json.loads(msg.value().decode())
-
-            print(f"[KAFKA] {topic} -> {data}")
-
-            socketio.emit(
-                "location_update",
-                data,
-                room=f"{topic}-consumer"
-            )
-
-        except Exception as e:
-            print("Parse error:", e)
-
-
-@socketio.on('connect')
+@socketio.on("connect")
 def handle_connect(auth):
-    print("Client connected")
+    topic = auth.get("topic")
+    driver = auth.get("driver_id")
+    role = auth.get("type")
 
-    topic = None
-    driver_id = None
-    client_type = "producer"
-    print(f"auth : {auth}")
-    if auth:
-        topic = auth.get('topic')
-        driver_id = auth.get('driver_id')
-        client_type = auth.get('type', 'producer')
-
-    if not topic:
-        topic = request.args.get('topic')
-        driver_id = request.args.get('driver_id')
-
-    if not topic:
-        print("returning back while connecting")
-        return False
-
-    if client_type == "producer":
-
-        with lock:
-            if topic not in cached_topics:
-                try:
-                    fs = adminClient.create_topics([
-                        NewTopic(topic, num_partitions=1, replication_factor=1)
-                    ])
-                    for t, f in fs.items():
-                        try:
-                            f.result()
-                            print(f"[KAFKA] Created topic {t}")
-                        except Exception as e:
-                            print(f"[KAFKA] Create failed: {e}")
-                except Exception as e:
-                    print("Topic creation error:", e)
-
-                cached_topics.add(topic)
-
-        join_room(topic)
-        active_topics.add(topic)
-
-        print(f"[PRODUCER] joined {topic}")
-
+    if role == "producer":
+        emit("connected", {"status": "ok"})
     else:
-        join_room(f"{topic}-consumer")
+        socketio.start_background_task(kafka_listener, topic, request.sid)
 
-        with lock:
-            if topic not in running_consumers:
-                threading.Thread(
-                    target=kafka_listener,
-                    args=(topic,),
-                    daemon=True
-                ).start()
+@socketio.on("send_location")
+def handle_location(data):
+    topic = data.get("topic")
+    loc = data.get("loc")
+    producer.produce(topic, value=json.dumps(loc).encode())
+    producer.poll(0)
 
-                running_consumers.add(topic)
-
-        print(f"[CONSUMER] joined {topic}-consumer")
-
-
-@socketio.on("loc_update-producer")
-def handle_loc_update(data):
-    topic = data.get('topic')
-    loc = data.get('loc')
-    driver = data.get('driver_id')
-    school = data.get('school')
-
-    if not topic or not loc:
-        return
-
-    try:
-        producer.produce(
-            topic,
-            key=bytes(f"{school}-{driver}", 'utf-8'),
-            value=json.dumps(loc).encode()
-        )
-
-        producer.flush(0.01)
-
-        print(f"[PRODUCED] {topic} -> {loc}")
-
-    except Exception as e:
-        print("Producer error:", e)
-
+@socketio.on("disconnect")
+def handle_disconnect():
+    print("disconnecting")
+    pass
 
 @app.route('/')
 def home():
