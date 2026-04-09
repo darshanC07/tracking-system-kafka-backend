@@ -5,7 +5,7 @@ from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO, join_room
 from dotenv import load_dotenv
-from confluent_kafka import Producer, Consumer
+from confluent_kafka import Producer, Consumer, KafkaError
 from confluent_kafka.admin import AdminClient, NewTopic
 
 from os import getenv
@@ -17,7 +17,7 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-# FIX: Removed strict transports=["websocket"] so Socket.IO can fallback properly
+# Socket.IO setup with eventlet
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
 config = {
@@ -38,6 +38,39 @@ running_consumers = set()
 cached_topics = set()
 lock = threading.Lock()
 active_listeners = {} 
+
+
+def create_topic_safe(topic_name):
+    """
+    Runs outside the main Eventlet loop. Safely checks and creates topics.
+    """
+    try:
+        # Check if topic already exists to avoid unnecessary error throwing
+        metadata = adminClient.list_topics(timeout=5)
+        if topic_name in metadata.topics:
+            print(f"[KAFKA] Topic {topic_name} already exists in broker.")
+            return
+
+        print(f"[KAFKA] Attempting to create topic: {topic_name}")
+        fs = adminClient.create_topics([
+            NewTopic(topic_name, num_partitions=1, replication_factor=1)
+        ])
+        
+        for t, f in fs.items():
+            try:
+                f.result()  # This blocks, but it's safe inside tpool
+                print(f"[KAFKA] Successfully created topic {t}")
+            except Exception as e:
+                # Handle race conditions where topic was created moments ago
+                if hasattr(e, 'args') and len(e.args) > 0 and hasattr(e.args[0], 'code'):
+                    if e.args[0].code() == KafkaError.TOPIC_ALREADY_EXISTS:
+                        print(f"[KAFKA] Topic {t} already exists.")
+                    else:
+                        print(f"[KAFKA] Create failed: {e}")
+                else:
+                    print(f"[KAFKA] Create failed: {e}")
+    except Exception as e:
+        print(f"[KAFKA] Admin client error: {e}")
 
 
 def kafka_listener(topic, group_id="admin-4", offset="latest"):
@@ -86,7 +119,7 @@ def kafka_listener(topic, group_id="admin-4", offset="latest"):
 
 @socketio.on('connect')
 def handle_connect(auth):
-    print("Client connected : ",auth)
+    print("Client connected : ", auth)
 
     topic = None
     driver_id = None
@@ -103,31 +136,19 @@ def handle_connect(auth):
 
     if not topic:
         print("No topic provided, disconnecting client")
-        return
+        return False  # Reject connection cleanly
         
     if client_type == "producer":
-        print("in producer")
-        print("cache topics:", cached_topics)
+        needs_creation = False
+        
         with lock:
             if topic not in cached_topics:
-                print("topic not in cached_topics")
-                try:
-                    fs = adminClient.create_topics([
-                        NewTopic(topic, num_partitions=1, replication_factor=1)
-                    ])
-                    print("adminClient.create_topics called")
-                    for t, f in fs.items():
-                        try:
-                            f.result()
-                            print(f"[KAFKA] Created topic {t}")
-                        except Exception as e:
-                            print(f"[KAFKA] Create failed: {e}")
-                except Exception as e:
-                    print("Topic creation error:", e)
-
-                print("Adding topic to cached_topics")
                 cached_topics.add(topic)
-                print(f"Added {topic} to cached_topics")
+                needs_creation = True
+
+        if needs_creation:
+            # Offload blocking C-extension call to a native thread
+            eventlet.tpool.execute(create_topic_safe, topic)
 
         join_room(topic)
         active_topics.add(topic)
@@ -167,7 +188,8 @@ def handle_loc_update(data):
             key=bytes(f"{school}-{driver}", 'utf-8'),
             value=json.dumps(loc).encode()
         )
-        producer.flush(0.01)
+        # poll(0) handles callbacks asynchronously without blocking the event loop
+        producer.poll(0) 
         print(f"[PRODUCED] {topic} -> {loc}")
 
     except Exception as e:
