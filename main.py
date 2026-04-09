@@ -1,5 +1,6 @@
 import eventlet
 eventlet.monkey_patch()
+from eventlet import tpool
 
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
@@ -148,7 +149,7 @@ def handle_connect(auth):
 
         if needs_creation:
             # Offload blocking C-extension call to a native thread
-            eventlet.tpool.execute(create_topic_safe, topic)
+            tpool.execute(create_topic_safe, topic)
 
         join_room(topic)
         active_topics.add(topic)
