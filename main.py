@@ -1,7 +1,7 @@
 import eventlet
 eventlet.monkey_patch()
 
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO, join_room
 from dotenv import load_dotenv
@@ -12,14 +12,13 @@ from os import getenv
 import json
 import threading
 
-
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 
+# FIX: Removed strict transports=["websocket"] so Socket.IO can fallback properly
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
-
 
 config = {
     'bootstrap.servers': getenv('BOOTSTRAP_SERVER'),
@@ -33,11 +32,12 @@ config = {
 producer = Producer(config)
 adminClient = AdminClient(config)
 
-
+# Global State
 active_topics = set()
 running_consumers = set()
 cached_topics = set()
 lock = threading.Lock()
+active_listeners = {} 
 
 
 def kafka_listener(topic, group_id="admin-4", offset="latest"):
@@ -55,20 +55,16 @@ def kafka_listener(topic, group_id="admin-4", offset="latest"):
 
     consumer.subscribe([topic])  
 
-    while True:
-        eventlet.sleep(0.01)
+    while active_listeners.get(topic, True):
+        eventlet.sleep(0.01) 
         
         msg = consumer.poll(0.2)
 
         if msg is None or msg.error():
-            if topic in running_consumers and offset == "earliest":
-                print(f"[KAFKA] No message for {topic}, continuing...")
-                running_consumers.remove(topic)
             continue
 
         try:
             data = json.loads(msg.value().decode())
-
             print(f"[KAFKA] {topic} -> {data}")
 
             socketio.emit(
@@ -79,6 +75,13 @@ def kafka_listener(topic, group_id="admin-4", offset="latest"):
 
         except Exception as e:
             print("Parse error:", e)
+
+    print(f"[KAFKA] Stopping listener and closing consumer for {topic}")
+    consumer.close()
+    
+    with lock:
+        running_consumers.discard(topic)
+        active_listeners.pop(topic, None)
 
 
 @socketio.on('connect')
@@ -96,13 +99,12 @@ def handle_connect(auth):
 
     if not topic:
         topic = request.args.get('topic')
-        driver_id = request.args.get('driver_id')
 
-    if not topic:
-        return False
-
+    # if not topic:
+    #     print("No topic provided, skipping room join")
+    #     return
+        
     if client_type == "producer":
-
         with lock:
             if topic not in cached_topics:
                 try:
@@ -122,7 +124,6 @@ def handle_connect(auth):
 
         join_room(topic)
         active_topics.add(topic)
-
         print(f"[PRODUCER] joined {topic}")
 
     else:
@@ -130,6 +131,8 @@ def handle_connect(auth):
 
         with lock:
             if topic not in running_consumers:
+                active_listeners[topic] = True 
+                
                 socketio.start_background_task(
                     kafka_listener,
                     topic
@@ -137,15 +140,6 @@ def handle_connect(auth):
                 running_consumers.add(topic)
             else:
                 print(f"[KAFKA] Listener for {topic} already running")
-                print("stopping duplicate consumer thread")
-                
-                running_consumers.remove(topic)
-                
-                socketio.start_background_task(
-                    kafka_listener,
-                    topic
-                )
-                running_consumers.add(topic)
 
         print(f"[CONSUMER] joined {topic}-consumer")
 
@@ -166,9 +160,7 @@ def handle_loc_update(data):
             key=bytes(f"{school}-{driver}", 'utf-8'),
             value=json.dumps(loc).encode()
         )
-
         producer.flush(0.01)
-
         print(f"[PRODUCED] {topic} -> {loc}")
 
     except Exception as e:
@@ -178,6 +170,7 @@ def handle_loc_update(data):
 @app.route('/')
 def home():
     return "Server running"
+
 
 @app.route('/admin')
 def admin():
@@ -191,11 +184,7 @@ def admin():
 
     with lock:
         if topic not in running_consumers:
-            # threading.Thread(
-            #     target=kafka_listener,
-            #     args=(topic, group_id, offset),
-            #     daemon=True
-            # ).start()
+            active_listeners[topic] = True 
             
             socketio.start_background_task(
                 kafka_listener,
@@ -203,16 +192,29 @@ def admin():
                 group_id,
                 offset
             )
-
             running_consumers.add(topic)
+        if topic not in active_topics:
+            active_topics.add(topic)
         else:
-            print(f"[KAFKA] Listener for {topic} already running - [/admin]")
-            print("stopping duplicate consumer thread - [/admin]")
-            running_consumers.remove(topic)
-            
-    print(f"[ADMIN] Started consuming {topic}")
+            return f"Someone is already consuming {topic}. Please try again after sometime. Till then check other rides", 400
 
+    print(f"[ADMIN] Started consuming {topic}")
     return render_template('ride.html')
+
+
+@app.route('/stop_listening', methods=['POST'])
+def stop_listening():
+    topic = request.args.get('topic')
+    
+    if not topic:
+        return jsonify({"error": "No topic provided"}), 400
+
+    with lock:
+        if topic in active_listeners:
+            active_listeners[topic] = False 
+            return jsonify({"status": f"Sent stop signal to {topic}"}), 200
+        else:
+            return jsonify({"status": f"No active listener found for {topic}"}), 404
 
 
 if __name__ == '__main__':

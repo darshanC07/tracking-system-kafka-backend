@@ -8,36 +8,49 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 
     <style>
+      body, html { margin: 0; padding: 0; }
       #map {
         height: 100vh;
         width: 100%;
       }
+      #stop-btn {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        z-index: 1000;
+        padding: 10px 15px;
+        background-color: #d9534f;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-weight: bold;
+        cursor: pointer;
+      }
+      #stop-btn:hover { background-color: #c9302c; }
     </style>
   </head>
   <body>
+    <button id="stop-btn" onclick="stopConsuming()">End Ride (Stop Map)</button>
+    
     <div id="map"></div>
+    
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
     <script>
       const map = L.map("map").setView([18.5204, 73.8567], 15);
       
-
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "&copy; OpenStreetMap contributors",
       }).addTo(map);
 
-      // Initialize empty route
       const polyline = L.polyline([], {
         color: "blue",
         weight: 5,
       }).addTo(map);
 
-      // Track bounds dynamically
       const bounds = L.latLngBounds();
 
-      let url = new URL(window.location.href);
-      url = `${url.protocol}//${url.host}/`;
       const urlParams = new URLSearchParams(window.location.search);
       const groupId = urlParams.get("group_id");
       const topic = urlParams.get("topic");
@@ -47,20 +60,13 @@
           topic: topic,
           groupId: groupId,
           type: "consumer",
-        },
-        // transports: ["websocket"]
+        }
       });
-      // const socket = io("https://30vkdstn-5000.inc1.devtunnels.ms/", {
-      //   auth: {
-      //     topic: topic,
-      //     groupId: groupId,
-      //     type: "consumer",
-      //   },
-      //   transports: ["websocket"]
-      // });
+
       socket.on("connect", () => {
         console.log("Connected to WebSocket server");
       });
+
       socket.on("location_update", (data) => {
         const { lat, long } = data;
         const point = [lat, long];
@@ -68,7 +74,37 @@
         polyline.addLatLng(point);
         bounds.extend(point);
 
-        map.panTo(point); // smoother than fitBounds
+        map.panTo(point); 
+      });
+
+      function stopConsuming() {
+        if (!topic) return alert("No topic found to stop.");
+        
+        fetch(`http://192.168.0.193:5000/stop_listening?topic=${topic}`, {
+            method: 'POST'
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log(data);
+            alert(data.status); 
+            socket.disconnect(); 
+        })
+        .catch(err => console.error("Error stopping task:", err));
+      }
+
+      window.addEventListener("beforeunload", () => {
+        socket.disconnect();
+        stopConsuming();
+      });
+
+      window.addEventListener("unload", () => {
+        socket.disconnect();
+        stopConsuming();
+      });
+
+      window.addEventListener("close", () => {
+        socket.disconnect();
+        stopConsuming();
       });
     </script>
   </body>
