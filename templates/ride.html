@@ -21,6 +21,7 @@
 
     <script>
       const map = L.map("map").setView([18.5204, 73.8567], 15);
+      
 
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "&copy; OpenStreetMap contributors",
@@ -35,18 +36,31 @@
       // Track bounds dynamically
       const bounds = L.latLngBounds();
 
+      let url = new URL(window.location.href);
+      url = `${url.protocol}//${url.host}/`;
       const urlParams = new URLSearchParams(window.location.search);
       const groupId = urlParams.get("group_id");
       const topic = urlParams.get("topic");
 
-      const socket = io("https://tracking-system-kafka-backend-production-b199.up.railway.app/", {
+      const socket = io("http://192.168.0.193:5000/", {
         auth: {
           topic: topic,
           groupId: groupId,
           type: "consumer",
         },
+        // transports: ["websocket"]
       });
-
+      // const socket = io("https://30vkdstn-5000.inc1.devtunnels.ms/", {
+      //   auth: {
+      //     topic: topic,
+      //     groupId: groupId,
+      //     type: "consumer",
+      //   },
+      //   transports: ["websocket"]
+      // });
+      socket.on("connect", () => {
+        console.log("Connected to WebSocket server");
+      });
       socket.on("location_update", (data) => {
         const { lat, long } = data;
         const point = [lat, long];

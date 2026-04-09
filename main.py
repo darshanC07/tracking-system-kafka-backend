@@ -56,9 +56,14 @@ def kafka_listener(topic, group_id="admin-4", offset="latest"):
     consumer.subscribe([topic])  
 
     while True:
+        eventlet.sleep(0.01)
+        
         msg = consumer.poll(0.2)
 
         if msg is None or msg.error():
+            if topic in running_consumers and offset == "earliest":
+                print(f"[KAFKA] No message for {topic}, continuing...")
+                running_consumers.remove(topic)
             continue
 
         try:
@@ -125,12 +130,21 @@ def handle_connect(auth):
 
         with lock:
             if topic not in running_consumers:
-                threading.Thread(
-                    target=kafka_listener,
-                    args=(topic,),
-                    daemon=True
-                ).start()
-
+                socketio.start_background_task(
+                    kafka_listener,
+                    topic
+                )
+                running_consumers.add(topic)
+            else:
+                print(f"[KAFKA] Listener for {topic} already running")
+                print("stopping duplicate consumer thread")
+                
+                running_consumers.remove(topic)
+                
+                socketio.start_background_task(
+                    kafka_listener,
+                    topic
+                )
                 running_consumers.add(topic)
 
         print(f"[CONSUMER] joined {topic}-consumer")
@@ -177,14 +191,25 @@ def admin():
 
     with lock:
         if topic not in running_consumers:
-            threading.Thread(
-                target=kafka_listener,
-                args=(topic, group_id, offset),
-                daemon=True
-            ).start()
+            # threading.Thread(
+            #     target=kafka_listener,
+            #     args=(topic, group_id, offset),
+            #     daemon=True
+            # ).start()
+            
+            socketio.start_background_task(
+                kafka_listener,
+                topic,
+                group_id,
+                offset
+            )
 
             running_consumers.add(topic)
-
+        else:
+            print(f"[KAFKA] Listener for {topic} already running - [/admin]")
+            print("stopping duplicate consumer thread - [/admin]")
+            running_consumers.remove(topic)
+            
     print(f"[ADMIN] Started consuming {topic}")
 
     return render_template('ride.html')
