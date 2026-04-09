@@ -86,7 +86,7 @@ def kafka_listener(topic, group_id="admin-4", offset="latest"):
 
 @socketio.on('connect')
 def handle_connect(auth):
-    print("Client connected")
+    print("Client connected : ",auth)
 
     topic = None
     driver_id = None
@@ -99,18 +99,22 @@ def handle_connect(auth):
 
     if not topic:
         topic = request.args.get('topic')
+        print("Topic from query params:", topic)
 
-    # if not topic:
-    #     print("No topic provided, skipping room join")
-    #     return
+    if not topic:
+        print("No topic provided, disconnecting client")
+        return
         
     if client_type == "producer":
+        print("in producer")
         with lock:
             if topic not in cached_topics:
+                print("topic not in cached_topics")
                 try:
                     fs = adminClient.create_topics([
                         NewTopic(topic, num_partitions=1, replication_factor=1)
                     ])
+                    print("adminClient.create_topics called")
                     for t, f in fs.items():
                         try:
                             f.result()
@@ -120,7 +124,9 @@ def handle_connect(auth):
                 except Exception as e:
                     print("Topic creation error:", e)
 
+                print("Adding topic to cached_topics")
                 cached_topics.add(topic)
+                print(f"Added {topic} to cached_topics")
 
         join_room(topic)
         active_topics.add(topic)
