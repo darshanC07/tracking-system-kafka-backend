@@ -107,6 +107,7 @@ def handle_connect(auth):
         
     if client_type == "producer":
         print("in producer")
+        print("cache topics:", cached_topics)
         with lock:
             if topic not in cached_topics:
                 print("topic not in cached_topics")
