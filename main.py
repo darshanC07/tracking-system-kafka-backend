@@ -190,7 +190,7 @@ def handle_loc_update(data):
             value=json.dumps(loc).encode()
         )
         # poll(0) handles callbacks asynchronously without blocking the event loop
-        producer.poll(0) 
+        # producer.poll(0) 
         print(f"[PRODUCED] {topic} -> {loc}")
 
     except Exception as e:
