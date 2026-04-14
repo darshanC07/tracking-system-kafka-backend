@@ -192,11 +192,11 @@ async def admin(request: Request, topic: str = None):
             }
         )
 
-    with lock:
-        if topic not in running_consumers:
-            active_listeners[topic] = True
-            asyncio.create_task(kafka_listener(topic))
-            running_consumers.add(topic)
+    # with lock:
+    #     if topic not in running_consumers:
+    #         active_listeners[topic] = True
+    #         asyncio.create_task(kafka_listener(topic))
+    #         running_consumers.add(topic)
 
     return templates.TemplateResponse(
         name="ride.html",
