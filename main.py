@@ -82,7 +82,7 @@ def create_topic_blocking(topic_name):
         raise e
 
 
-async def kafka_listener(topic, group_id="admin-4", offset="latest"):
+async def kafka_listener(topic, group_id, offset):
     print(f"[KAFKA] Listening: {topic}")
 
     consumer = Consumer({
@@ -141,6 +141,8 @@ async def kafka_producer(data):
 async def websocket_endpoint(
     websocket: WebSocket,
     topic: str = Query(None),
+    group_id: str = Query(None),
+    offset: str = Query(None),
     client_type: str = Query("producer"),
 ):
     if not topic:
@@ -157,7 +159,7 @@ async def websocket_endpoint(
         with lock:
             if topic not in running_consumers:
                 active_listeners[topic] = True
-                asyncio.create_task(kafka_listener(topic))
+                asyncio.create_task(kafka_listener(topic,group_id,offset))
                 running_consumers.add(topic)
 
     try:
