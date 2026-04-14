@@ -2,7 +2,7 @@ import asyncio
 import json
 import threading
 from os import getenv
-
+import os  
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from confluent_kafka import Producer, Consumer, KafkaError
@@ -219,3 +219,7 @@ def stop_listening(topic: str):
         content={"error": "No active listener"},
         status_code=404
     )
+    
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
