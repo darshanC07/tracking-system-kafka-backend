@@ -61,7 +61,7 @@ let socket;
 
 function connectWebSocket() {
     socket = new WebSocket(
-        `wss://${window.location.host}/ws?topic=${topic}&group_id=${group_id}&offset=${offset}&client_type=consumer`
+        `wss://${window.location.host}/ws?topic=${topic}&group_id=${groupId}&offset=${offset}&client_type=consumer`
     );
 
     socket.onopen = () => {
