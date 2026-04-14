@@ -94,9 +94,9 @@ async def kafka_listener(topic, group_id, offset):
     consumer.subscribe([topic])
 
     while active_listeners.get(topic, True):
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.01)
 
-        msg = consumer.poll(0.2)
+        msg = await asyncio.to_thread(consumer.poll, 0.2)
         if msg is None or msg.error():
             continue
 
