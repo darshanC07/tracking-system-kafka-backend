@@ -132,7 +132,7 @@ async def kafka_producer(data):
         value=json.dumps(loc).encode()
     )
 
-    producer.flush()  
+    await asyncio.to_thread(producer.flush)
 
     print(f"[PRODUCED] {topic} -> {loc}")
 
