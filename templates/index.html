@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kafka Admin</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #ffffff;
+            color: #222;
+            margin: 0;
+        }
+
+        #container {
+            max-width: 520px;
+            margin: 60px auto;
+            padding: 28px;
+            background: #eef6ff;
+            border: 1px solid #cfe3ff;
+            border-radius: 10px;
+        }
+
+        h1 { margin-bottom: 5px; }
+        p { margin-bottom: 25px; color: #555; }
+
+        .form-group { margin-bottom: 20px; }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #bbb;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .inline {
+            display: flex;
+            gap: 20px;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #6df366;
+            border: 1px solid #099202;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .hidden { display: none; }
+    </style>
+</head>
+
+<body>
+<div id="container">
+    <h1>Kafka Admin</h1>
+    <p>Start a consumer for a topic.</p>
+
+    <div class="form-group">
+        <label>Topic</label>
+        <select id="topic">
+            <option value="" disabled selected>Select a topic</option>
+            {% for topic in topics %}
+                <option value="{{ topic }}">{{ topic }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label>Group ID</label>
+
+        <div class="inline">
+            <label>
+                <input type="radio" name="groupMode" value="manual" checked onchange="toggleGroupInput()">
+                Manual
+            </label>
+            <label>
+                <input type="radio" name="groupMode" value="random" onchange="toggleGroupInput()">
+                Random
+            </label>
+        </div>
+
+        <input type="text" id="groupId" placeholder="Enter group id">
+    </div>
+
+    <div class="form-group">
+        <label>Offset</label>
+        <div class="inline">
+            <label><input type="radio" name="offset" value="latest" checked> Latest</label>
+            <label><input type="radio" name="offset" value="earliest"> Earliest</label>
+        </div>
+    </div>
+
+    <button onclick="startConsumer()">Start Consumer</button>
+</div>
+
+<script>
+function generateRandomGroupId() {
+    return "group-" + Math.random().toString(36).substring(2, 10);
+}
+
+function getSelected(name) {
+    return document.querySelector(`input[name="${name}"]:checked`).value;
+}
+
+function toggleGroupInput() {
+    const mode = getSelected("groupMode");
+    const input = document.getElementById("groupId");
+
+    if (mode === "random") {
+        input.classList.add("hidden");
+        input.value = "";
+    } else {
+        input.classList.remove("hidden");
+    }
+}
+
+function startConsumer() {
+    const topic = document.getElementById("topic").value;
+    const groupMode = getSelected("groupMode");
+    let groupId = document.getElementById("groupId").value.trim();
+    const offset = getSelected("offset");
+
+    if (!topic) return alert("Topic required");
+
+    if (groupMode === "random") {
+        groupId = generateRandomGroupId();
+    } else if (!groupId) {
+        return alert("Group ID required");
+    }
+
+    window.location.href = `/admin?topic=${topic}&group_id=${groupId}&offset=${offset}`;
+}
+
+toggleGroupInput();
+</script>
+</body>
+</html>
