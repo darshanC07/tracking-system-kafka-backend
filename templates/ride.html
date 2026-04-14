@@ -54,12 +54,14 @@ const bounds = L.latLngBounds();
 
 const urlParams = new URLSearchParams(window.location.search);
 const topic = urlParams.get("topic");
+const groupId = urlParams.get("group_id")
+const offset = urlParams.get("offset")
 
 let socket;
 
 function connectWebSocket() {
     socket = new WebSocket(
-        `wss://${window.location.host}/ws?topic=${topic}&client_type=consumer`
+        `wss://${window.location.host}/ws?topic=${topic}&group_id=${group_id}&offset=${offset}&client_type=consumer`
     );
 
     socket.onopen = () => {
