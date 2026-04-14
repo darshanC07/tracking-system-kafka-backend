@@ -57,10 +57,9 @@ const topic = urlParams.get("topic");
 
 let socket;
 
-// 🔁 WebSocket connect function
 function connectWebSocket() {
     socket = new WebSocket(
-        `ws://${window.location.host}/ws?topic=${topic}&client_type=consumer`
+        `wss://${window.location.host}/ws?topic=${topic}&client_type=consumer`
     );
 
     socket.onopen = () => {
@@ -89,11 +88,9 @@ function connectWebSocket() {
     };
 }
 
-// start connection
 connectWebSocket();
 
 
-// 🛑 Stop consuming
 function stopConsuming() {
     if (!topic) return alert("No topic");
 
