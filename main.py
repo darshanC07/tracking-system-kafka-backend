@@ -83,7 +83,7 @@ def create_topic_blocking(topic_name):
 
 
 async def kafka_listener(topic, group_id, offset):
-    print(f"[KAFKA] Listening: {topic}")
+    print(f"[KAFKA] Listening: {topic} - groupId ${group_id} - offset ${offset}")
 
     consumer = Consumer({
         **config,
@@ -159,7 +159,7 @@ async def websocket_endpoint(
         with lock:
             if topic not in running_consumers:
                 active_listeners[topic] = True
-                asyncio.create_task(kafka_listener(topic,group_id,offset))
+                asyncio.run(kafka_listener(topic,group_id,offset))
                 running_consumers.add(topic)
 
     try:
