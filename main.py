@@ -159,7 +159,7 @@ async def websocket_endpoint(
         with lock:
             if topic not in running_consumers:
                 active_listeners[topic] = True
-                asyncio.run(kafka_listener(topic,group_id,offset))
+                asyncio.create_task(kafka_listener(topic,group_id,offset))
                 running_consumers.add(topic)
 
     try:
